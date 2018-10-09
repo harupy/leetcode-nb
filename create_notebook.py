@@ -3,6 +3,7 @@ import csv
 import pandas as pd
 import sys
 import os
+import time
 import nbformat
 import requests
 from bs4 import BeautifulSoup
@@ -29,11 +30,11 @@ def create_new_notebook(fpath):
 		nbformat.write(nb, f)
 
 
-def update_notebook(fpath, problem, sol):
+def update_notebook(fpath, problem, sol, code):
 	nb = nbformat.read(fpath, 4)
 	nb['cells'].insert(-1, nbformat.v4.new_markdown_cell(problem))
 	nb['cells'].insert(-1, nbformat.v4.new_code_cell(sol + '\n\nhide_toggle("Toggle the solution")'))
-	nb['cells'].insert(-1, nbformat.v4.new_code_cell('# Your solution'))
+	nb['cells'].insert(-1, nbformat.v4.new_code_cell(code))
 	with open(fpath, 'w') as f:
 		nbformat.write(nb, f)
 
@@ -76,13 +77,30 @@ def scrape_problems():
 def scrape_description(url):
 	driver.get(url)
 	try:
-		class_regex = r'^question-description'
 		WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.CLASS_NAME, 'question-content')))
+		WebDriverWait(driver, 3).until(EC.invisibility_of_element_located((By.CSS_SELECTOR, 'div#MathJax_Message')))
+		WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'div.Select-control'))).click()
+		python_tag = driver.find_elements_by_xpath('//div[text()="Python"]')
+		if python_tag:
+			python_tag[0].click()
+		else:
+			return '', ''
+		soup = BeautifulSoup(driver.page_source, 'lxml')
+		desc = soup.find('div', {'class': re.compile(r'^question-description')}).find('div').decode_contents()
+		code = soup.find('textarea', {'name': 'lc-codemirror'}).text.strip()
+		return desc, code
 	except Exception as e:
-		class_regex = r'content-wrapper'
-	soup = BeautifulSoup(driver.page_source, 'lxml')
-	desc = soup.find('div', {'class': re.compile(class_regex)}).find('div').decode_contents()
-	return desc
+		WebDriverWait(driver, 3).until(EC.invisibility_of_element_located((By.CSS_SELECTOR, 'div#MathJax_Message')))
+		WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'div.ant-select-selection-selected-value'))).click()
+		python_tag = driver.find_elements_by_xpath('//li[text()="Python"]')
+		if python_tag:
+			python_tag[0].click()
+		else:
+			return '', ''
+		soup = BeautifulSoup(driver.page_source, 'lxml')
+		desc = soup.find('div', {'class': re.compile(r'content-wrapper')}).find('div').decode_contents()
+		code = soup.find('input', {'name': 'code'})['value']
+		return desc, code
 
 
 def format_description(desc):
@@ -106,16 +124,27 @@ def format_solution(sol):
 
 def main():
 	difficulty = 'Easy'
-	fpath = 'leetcode_{}.ipynb'.format(difficulty.lower())
+	cnt = 0
+	start = 1
+	end = 100
+	fpath = 'leetcode_{}_{}-{}.ipynb'.format(difficulty.lower(), str(start).zfill(3), end)
 	create_new_notebook(fpath)
 	try:
 		df = scrape_problems()
 		df = df[df['difficulty'] == difficulty]
 		cols = ['title', 'problem_url', 'difficulty', 'locked']
 		for index, (title, problem_url, difficulty, locked) in df[cols].iterrows():
-			if index + 1 > 100: break
+			print(index, title, problem_url)
+			cnt += 1
+			if index + 1 > end:
+				start += 100
+				end += 100
+				fpath = 'leetcode_{}_{}-{}.ipynb'.format(difficulty.lower(), str(start).zfill(3), end)
+				create_new_notebook(fpath)
+
 			if locked: continue
-			desc = scrape_description(problem_url)
+			desc, code = scrape_description(problem_url)
+			if not desc: continue
 			desc = format_description(desc)
 			sol = scrape_solution(title.lower().replace(' ', '-'))
 			sol = format_solution(sol)
@@ -124,11 +153,11 @@ def main():
 				'## [{}. {} ({})]({})'.format(index + 1, title, difficulty.capitalize(), problem_url),
 				desc,
 			])
-			update_notebook(fpath, problem, sol)
-			print(index, title, problem_url)
+			update_notebook(fpath, problem, sol, code)
 	except Exception as e:
 		print_error(e)
 	finally:
+		pass
 		driver.quit()
 
 
