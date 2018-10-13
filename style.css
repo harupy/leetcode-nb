@@ -1,0 +1,22 @@
+div.example {
+	display: block;
+	padding: 9.5px;
+	margin: 0 0 10px;
+	white-space: pre;
+	background-color: #ffffe0;
+	border: 1px solid #ccc;
+	border-radius: 4px;
+}
+
+code {
+	color: #c7254e !important;
+	background-color: #f9f2f4 !important;
+}
+
+div.example code {
+	background-color: #ffffe0 !important;
+}
+
+hr {
+	border-top: 2px solid #000;
+}
